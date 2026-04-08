@@ -1,5 +1,8 @@
 fastapi
 uvicorn
-sqlalchemy
+sqlalchemy[asyncio]
 asyncpg
 python-dotenv
+pydantic
+pydantic-settings
+email-validator
