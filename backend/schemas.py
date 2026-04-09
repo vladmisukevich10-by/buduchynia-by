@@ -19,3 +19,10 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class NavigatorRequest(BaseModel):
+    student_id: int
+    question: str
+
+class NavigatorResponse(BaseModel):
+    answer: str
