@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, JSON
+from sqlalchemy import Column, Integer, String, Float, JSON, Text # <--- Добавили Text
 from database import Base
+from pgvector.sqlalchemy import Vector
 
 class User(Base):
     __tablename__ = "users"
@@ -11,19 +12,26 @@ class User(Base):
     
     # Данные для расчета CRI
     average_grade = Column(Float, default=0.0)  # Средний балл (10-балльная система)
-    achievements = Column(JSON, default=list)   # Список достижений (олимпиады и т.д.)
-    interests = Column(JSON, default=list)      # Сферы интересов (IT, Медицина, и т.д.)
+    achievements = Column(JSON, default=[])      # Список достижений
+    interests = Column(JSON, default=[])         # Сферы интересов
     
     # Итоговый индекс карьерной готовности
     cri_score = Column(Float, default=0.0)
 
     def calculate_cri(self):
         """
-        Базовая логика CRI для MVP.
-        Позже мы вынесем это в отдельный сервис.
+        Логика CRI: (Балл * 10) + количество достижений * 5
         """
-        # Упрощенная формула: (Балл * 10) + количество достижений * 5
         base_score = self.average_grade * 10
         achievement_bonus = len(self.achievements) * 5
         self.cri_score = base_score + achievement_bonus
         return self.cri_score
+
+class KnowledgeBase(Base):
+    __tablename__ = "knowledge_base"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content = Column(Text, nullable=False)  # Теперь ошибка NameError исчезнет
+    category = Column(String)
+    # Вектор для nomic-embed-text имеет размерность 768
+    embedding = Column(Vector(768))

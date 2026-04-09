@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware  # <-- Новый импорт для CORS
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import ollama  # Импорт для работы с локальным ИИ
@@ -7,6 +8,17 @@ import models
 import schemas
 
 app = FastAPI(title="Будучыня.BY API")
+
+# --- ДОБАВЛЕНО: Настройка CORS ---
+# Разрешаем твоему Node.js фронтенду делать запросы к этому API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # В продакшене тут будет URL твоего сайта, пока разрешаем всё
+    allow_credentials=True,
+    allow_methods=["*"],  # Разрешаем POST, GET, OPTIONS и т.д.
+    allow_headers=["*"],  # Разрешаем любые заголовки (включая Content-Type)
+)
+# ----------------------------------
 
 @app.on_event("startup")
 async def startup():
@@ -46,36 +58,52 @@ async def register_user(user_data: schemas.UserCreate, db: AsyncSession = Depend
 
 @app.post("/ask_navigator", response_model=schemas.NavigatorResponse)
 async def ask_navigator(req: schemas.NavigatorRequest, db: AsyncSession = Depends(get_db)):
-    # 1. Получаем данные ученика для контекста ИИ
-    query = select(models.User).where(models.User.id == req.student_id)
-    result = await db.execute(query)
-    user = result.scalar_one_or_none()
+    # 1. Получаем данные конкретного ученика из запроса
+    user_query = await db.execute(select(models.User).where(models.User.id == req.student_id))
+    user = user_query.scalar_one_or_none()
     
     if not user:
-        raise HTTPException(status_code=404, detail="Ученик не найден")
+        raise HTTPException(status_code=404, detail="Студент не найден")
+    
+    # 2. RAG: Ищем похожие факты
+    q_emb = ollama.embeddings(model="nomic-embed-text", prompt=req.question)["embedding"]
+    
+    # Увеличиваем лимит до 5 для лучшего охвата
+    kb_query = select(models.KnowledgeBase).order_by(
+        models.KnowledgeBase.embedding.cosine_distance(q_emb)
+    ).limit(5)
+    kb_results = (await db.execute(kb_query)).scalars().all()
+    
+    # Если база пустая, даем LLM понять это
+    context = "\n".join([f"- {r.content}" for r in kb_results]) if kb_results else "ИНФОРМАЦИЯ В БАЗЕ ОТСУТСТВУЕТ"
 
-    # 2. Формируем "личность" и контекст для модели
-    interests_str = ", ".join(user.interests) if user.interests else "не указаны"
+    # 3. Формируем СТРОГИЙ промпт
     system_prompt = (
-        f"Ты — мудрый карьерный консультант проекта 'Будучыня.BY'. "
-        f"Помогаешь школьникам Беларуси. Твой собеседник: {user.full_name}, "
-        f"{user.school_class} класс. Интересы: {interests_str}. Средний балл: {user.average_grade}. "
-        f"Отвечай кратко, вдохновляюще и на русском языке."
+        f"Ты — официальный AI-помощник системы 'Будучыня.BY'. Твоя цель — помогать абитуриентам.\n\n"
+        f"ПРАВИЛА:\n"
+        f"1. ОТВЕЧАЙ ТОЛЬКО НА РУССКОМ ЯЗЫКЕ.\n"
+        f"2. ИСПОЛЬЗУЙ ТОЛЬКО КОНТЕКСТ ИЗ БАЗЫ ЗНАНИЙ НИЖЕ.\n"
+        f"3. Если в контексте нет ответа на вопрос (например, про кулинарию или ремонт), "
+        f"ответь: 'Извините, я специализируюсь только на образовании и не могу ответить на этот вопрос'.\n"
+        f"4. Обращайся к пользователю по имени: {user.full_name}.\n\n"
+        f"КОНТЕКСТ:\n{context}\n\n"
+        f"ДАННЫЕ УЧЕНИКА:\nКласс: {user.school_class}, Ср. балл: {user.average_grade}, Достижения: {user.achievements}"
     )
 
-    # 3. Асинхронный запрос к локальной Ollama
-    try:
-        response = await ollama.AsyncClient().chat(
-            model='qwen2.5:7b', 
-            messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': req.question}
-            ]
-        )
-        return {"answer": response['message']['content']}
-    except Exception as e:
-        # Если Ollama не запущена или модель не скачана
-        raise HTTPException(status_code=500, detail=f"Ошибка AI-модуля: {str(e)}")
+    # 4. Запрос к LLM с нулевой температурой
+    response = await ollama.AsyncClient().chat(
+        model='qwen2.5:7b', 
+        messages=[
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': req.question}
+        ],
+        options={
+            'temperature': 0,  # Убираем случайность и галлюцинации
+            'top_p': 0.1
+        }
+    )
+    
+    return {"answer": response['message']['content']}
 
 @app.get("/health")
 async def health():
