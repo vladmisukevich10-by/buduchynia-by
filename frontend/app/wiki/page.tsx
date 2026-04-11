@@ -1,105 +1,107 @@
 "use client";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { GraduationCap, Users, BookOpen, ArrowRight } from "lucide-react";
+import { Search, MapPin, GraduationCap, ArrowRight, Loader2 } from "lucide-react";
 import Link from "next/link";
 
-// В будущем этот массив придет из API (useEffect + fetch)
-const universities = [
-  {
-    id: 1,
-    name: "Белорусский государственный университет информатики и радиоэлектроники",
-    shortName: "БГУИР",
-    facultiesCount: 7,
-    specialtiesCount: 35,
-    type: "Государственный",
-  },
-  {
-    id: 2,
-    name: "Белорусский государственный университет",
-    shortName: "БГУ",
-    facultiesCount: 20,
-    specialtiesCount: 80,
-    type: "Государственный",
-  },
-];
+interface University {
+  id: number;
+  name: string;
+  short_name: string;
+  description: string;
+  logo_url: string | null;
+}
 
 export default function WikiPage() {
-  return (
-    <div className="min-h-screen bg-[#f8fafc] p-8">
-      <header className="mb-12 max-w-6xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-        >
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight">
-            База знаний ВУЗов
-          </h1>
-          <p className="text-slate-500 mt-2 text-lg">
-            Выбирай университет, чтобы увидеть факультеты и актуальные баллы
-          </p>
-        </motion.div>
-      </header>
+  const [universities, setUniversities] = useState<University[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-      {/* Сетка Вузов */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-        {universities.map((uni, index) => (
-          <Link href={`/wiki/${uni.id}`} key={uni.id}>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              whileHover={{ y: -8, transition: { duration: 0.2 } }}
-              className="group bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 transition-all cursor-pointer relative overflow-hidden"
-            >
-              {/* Декоративный фон при ховере */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-150" />
+  useEffect(() => {
+    const fetchUniversities = async () => {
+      try {
+        const response = await fetch("http://127.0.0.1:8000/universities");
+        if (!response.ok) throw new Error("Ошибка при загрузке данных");
+        const data = await response.json();
+        setUniversities(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Неизвестная ошибка");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-              <div className="relative z-10">
-                <div className="flex justify-between items-start mb-8">
-                  <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center group-hover:bg-white group-hover:shadow-lg transition-all text-slate-400 group-hover:text-indigo-600">
-                    <GraduationCap size={28} />
-                  </div>
-                  <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-bold uppercase tracking-widest rounded-full border border-emerald-100">
-                    {uni.type}
-                  </span>
-                </div>
+    fetchUniversities();
+  }, []);
 
-                <h2 className="text-2xl font-black text-slate-900 mb-2 group-hover:text-indigo-600 transition-colors">
-                  {uni.shortName}
-                </h2>
-                <p className="text-sm text-slate-400 leading-relaxed mb-8 line-clamp-2 italic">
-                  {uni.name}
-                </p>
-
-                <div className="flex items-center gap-6">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 bg-slate-50 rounded-lg text-slate-400">
-                      <BookOpen size={16} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-slate-400 uppercase font-bold">Факультетов</p>
-                      <p className="text-sm font-bold text-slate-700">{uni.facultiesCount}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 bg-slate-50 rounded-lg text-slate-400">
-                      <Users size={16} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-slate-400 uppercase font-bold">Программ</p>
-                      <p className="text-sm font-bold text-slate-700">{uni.specialtiesCount}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-8 flex items-center text-indigo-600 font-bold text-sm gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  Подробнее <ArrowRight size={16} />
-                </div>
-              </div>
-            </motion.div>
-          </Link>
-        ))}
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-indigo-600 mb-4" size={48} />
+        <p className="text-slate-500 font-medium italic">Загружаем базу знаний...</p>
       </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center p-8 bg-white rounded-3xl shadow-xl border border-red-100">
+          <p className="text-red-500 font-bold mb-2">Упс! Что-то пошло не так</p>
+          <p className="text-slate-500">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-20">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-100 py-12 px-4">
+        <div className="max-w-6xl mx-auto text-center">
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+            <span className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-sm font-bold tracking-wide uppercase">
+              Вики-база вузов
+            </span>
+            <h1 className="text-4xl md:text-5xl font-black text-slate-900 mt-6 mb-4">
+              Твой путь начинается здесь
+            </h1>
+            <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+              Полная информация о проходных баллах, специальностях и возможностях обучения в Беларуси.
+            </p>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* Grid */}
+      <main className="max-w-6xl mx-auto px-4 mt-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {universities.map((uni) => (
+            <Link href={`/wiki/${uni.id}`} key={uni.id}>
+              <motion.div
+                whileHover={{ y: -5 }}
+                className="group bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all cursor-pointer relative overflow-hidden"
+              >
+                <div className="relative z-10">
+                  <div className="flex justify-between items-start mb-6">
+                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100 group-hover:bg-indigo-50 transition-colors">
+                      <GraduationCap className="text-slate-400 group-hover:text-indigo-600" size={32} />
+                    </div>
+                    <span className="text-xs font-bold text-slate-400 group-hover:text-indigo-600 transition-colors flex items-center gap-1 uppercase tracking-widest">
+                      Подробнее <ArrowRight size={14} />
+                    </span>
+                  </div>
+
+                  <h3 className="text-2xl font-black text-slate-800 mb-2">{uni.short_name}</h3>
+                  <p className="text-slate-500 text-sm leading-relaxed mb-6 line-clamp-2">
+                    {uni.description}
+                  </p>
+                </div>
+              </motion.div>
+            </Link>
+          ))}
+        </div>
+      </main>
     </div>
   );
 }
