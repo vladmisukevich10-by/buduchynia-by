@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float, JSON, Text # <--- Добавили Text
-from database import Base
+from sqlalchemy import Column, Integer, String, Float, JSON, Text, ForeignKey # <-- Добавили ForeignKey
+from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
+from database import Base
 
 class User(Base):
     __tablename__ = "users"
@@ -8,14 +9,12 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     full_name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
-    school_class = Column(Integer)  # Класс (1-11)
+    school_class = Column(Integer)
     
-    # Данные для расчета CRI
-    average_grade = Column(Float, default=0.0)  # Средний балл (10-балльная система)
-    achievements = Column(JSON, default=[])      # Список достижений
-    interests = Column(JSON, default=[])         # Сферы интересов
+    average_grade = Column(Float, default=0.0)
+    achievements = Column(JSON, default=[])
+    interests = Column(JSON, default=[])
     
-    # Итоговый индекс карьерной готовности
     cri_score = Column(Float, default=0.0)
 
     def calculate_cri(self):
@@ -31,7 +30,43 @@ class KnowledgeBase(Base):
     __tablename__ = "knowledge_base"
 
     id = Column(Integer, primary_key=True, index=True)
-    content = Column(Text, nullable=False)  # Теперь ошибка NameError исчезнет
+    content = Column(Text, nullable=False)
     category = Column(String)
     # Вектор для nomic-embed-text имеет размерность 768
     embedding = Column(Vector(768))
+
+class University(Base):
+    __tablename__ = "universities"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    short_name = Column(String)
+    description = Column(String)
+    logo_url = Column(String)
+    website = Column(String)
+    
+    faculties = relationship("Faculty", back_populates="university", cascade="all, delete")
+
+class Faculty(Base):
+    __tablename__ = "faculties"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String)
+    university_id = Column(Integer, ForeignKey("universities.id"))
+    
+    university = relationship("University", back_populates="faculties")
+    specialties = relationship("Specialty", back_populates="faculty", cascade="all, delete")
+
+class Specialty(Base):
+    __tablename__ = "specialties"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    code = Column(String)
+    faculty_id = Column(Integer, ForeignKey("faculties.id"))
+    
+    budget_score = Column(Float)
+    paid_score = Column(Float)
+    subjects = Column(JSON)
+    slots_budget = Column(Integer)
+    slots_paid = Column(Integer)
+    
+    faculty = relationship("Faculty", back_populates="specialties")

@@ -1,7 +1,11 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional
 
-# То, что мы ждем от фронтенда при регистрации
+# Схема для отдельного сообщения в истории
+class MessageDict(BaseModel):
+    role: str      # 'user' или 'assistant'
+    content: str
+
 class UserCreate(BaseModel):
     full_name: str
     email: EmailStr
@@ -10,7 +14,6 @@ class UserCreate(BaseModel):
     interests: List[str] = []
     achievements: List[str] = []
 
-# То, что мы отдаем фронтенду (с ID и рассчитанным CRI)
 class UserResponse(BaseModel):
     id: int
     full_name: str
@@ -23,6 +26,7 @@ class UserResponse(BaseModel):
 class NavigatorRequest(BaseModel):
     student_id: int
     question: str
+    history: List[MessageDict] = []  # Поле для передачи истории переписки
 
 class NavigatorResponse(BaseModel):
     answer: str
