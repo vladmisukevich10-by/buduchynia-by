@@ -2,10 +2,12 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 import ollama
 from database import engine, Base, get_db
 import models
 import schemas
+from typing import List
 
 app = FastAPI(title="Будучыня.BY API")
 
@@ -21,6 +23,34 @@ app.add_middleware(
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+# --- РАЗДЕЛ ВИКИ ---
+
+@app.get("/universities", response_model=List[schemas.UniversityBase])
+async def get_universities(db: AsyncSession = Depends(get_db)):
+    # Загружаем всё дерево: Универ -> Факультеты -> Специальности
+    result = await db.execute(
+        select(models.University).options(
+            selectinload(models.University.faculties).selectinload(models.Faculty.specialties)
+        )
+    )
+    return result.scalars().all()
+
+@app.get("/universities/{uni_id}", response_model=schemas.UniversityBase)
+async def get_university_detail(uni_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(models.University)
+        .where(models.University.id == uni_id)
+        .options(
+            selectinload(models.University.faculties).selectinload(models.Faculty.specialties)
+        )
+    )
+    uni = result.scalar_one_or_none()
+    if not uni:
+        raise HTTPException(status_code=404, detail="Вуз не найден")
+    return uni
+
+# --- РАЗДЕЛ НАВИГАТОРА (Твой код) ---
 
 @app.post("/register", response_model=schemas.UserResponse)
 async def register_user(user_data: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
@@ -53,7 +83,6 @@ async def ask_navigator(req: schemas.NavigatorRequest, db: AsyncSession = Depend
     if not user:
         raise HTTPException(status_code=404, detail="Студент не найден")
     
-    # 2. RAG: Эмбеддинги и поиск контекста
     q_emb = ollama.embeddings(model="nomic-embed-text", prompt=req.question)["embedding"]
     kb_query = select(models.KnowledgeBase).order_by(
         models.KnowledgeBase.embedding.cosine_distance(q_emb)
@@ -61,31 +90,18 @@ async def ask_navigator(req: schemas.NavigatorRequest, db: AsyncSession = Depend
     kb_results = (await db.execute(kb_query)).scalars().all()
     context = "\n".join([f"- {r.content}" for r in kb_results]) if kb_results else "ИНФОРМАЦИЯ В БАЗЕ ОТСУТСТВУЕТ"
 
-    # 3. Формируем системный промпт
     system_prompt = (
         f"Ты — официальный AI-помощник системы 'Будучыня.BY'. Твоя цель — помогать абитуриентам.\n\n"
-        f"ПРАВИЛА:\n"
-        f"1. ОТВЕЧАЙ ТОЛЬКО НА РУССКОМ ЯЗЫКЕ.\n"
-        f"2. ИСПОЛЬЗУЙ ТОЛЬКО КОНТЕКСТ ИЗ БАЗЫ ЗНАНИЙ НИЖЕ.\n"
-        f"3. Если в контексте нет ответа, скажи, что специализируешься только на образовании.\n"
-        f"4. Обращайся к пользователю по имени: {user.full_name}.\n\n"
-        f"КОНТЕКСТ:\n{context}\n\n"
-        f"ДАННЫЕ УЧЕНИКА:\nКласс: {user.school_class}, Ср. балл: {user.average_grade}, Достижения: {user.achievements}"
+        f"ПРАВИЛА:\n1. ОТВЕЧАЙ ТОЛЬКО НА РУССКОМ ЯЗЫКЕ.\n2. ИСПОЛЬЗУЙ ТОЛЬКО КОНТЕКСТ.\n"
+        f"КОНТЕКСТ:\n{context}\n\nДАННЫЕ УЧЕНИКА: {user.full_name}, ср. балл {user.average_grade}"
     )
 
-    # Собираем историю для LLM
     messages_for_llm = [{'role': 'system', 'content': system_prompt}]
     for msg in req.history:
         messages_for_llm.append({'role': msg.role, 'content': msg.content})
     messages_for_llm.append({'role': 'user', 'content': req.question})
 
-    # 4. Запрос к LLM
-    response = await ollama.AsyncClient().chat(
-        model='qwen2.5:7b', 
-        messages=messages_for_llm,
-        options={'temperature': 0, 'top_p': 0.1}
-    )
-    
+    response = await ollama.AsyncClient().chat(model='qwen2.5:7b', messages=messages_for_llm)
     return {"answer": response['message']['content']}
 
 @app.get("/health")

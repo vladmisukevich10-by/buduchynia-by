@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, JSON, Text, ForeignKey # <-- Добавили ForeignKey
+from sqlalchemy import Column, Integer, String, Float, JSON, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 from database import Base
@@ -10,17 +10,12 @@ class User(Base):
     full_name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     school_class = Column(Integer)
-    
     average_grade = Column(Float, default=0.0)
     achievements = Column(JSON, default=[])
     interests = Column(JSON, default=[])
-    
     cri_score = Column(Float, default=0.0)
 
     def calculate_cri(self):
-        """
-        Логика CRI: (Балл * 10) + количество достижений * 5
-        """
         base_score = self.average_grade * 10
         achievement_bonus = len(self.achievements) * 5
         self.cri_score = base_score + achievement_bonus
@@ -32,7 +27,6 @@ class KnowledgeBase(Base):
     id = Column(Integer, primary_key=True, index=True)
     content = Column(Text, nullable=False)
     category = Column(String)
-    # Вектор для nomic-embed-text имеет размерность 768
     embedding = Column(Vector(768))
 
 class University(Base):
@@ -41,8 +35,14 @@ class University(Base):
     name = Column(String, unique=True, nullable=False)
     short_name = Column(String)
     description = Column(String)
+    history = Column(Text) # <--- Подробная история
+    cover_image = Column(String) # <--- URL фото вуза
     logo_url = Column(String)
     website = Column(String)
+    address = Column(String)
+    founded_year = Column(Integer)
+    has_military_faculty = Column(Boolean, default=False)
+    has_dormitory = Column(Boolean, default=False)
     
     faculties = relationship("Faculty", back_populates="university", cascade="all, delete")
 
